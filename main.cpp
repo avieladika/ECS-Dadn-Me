@@ -6,11 +6,9 @@
  *        starts the main loop if initialization succeeded.
  */
 
-void run_tests();
 
 int main()
 {
-	run_tests();
 
 	me_and_dad::Game game;
 	if (game.valid()) {
