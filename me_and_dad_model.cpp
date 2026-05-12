@@ -1,34 +1,37 @@
 #include "me_and_dad_model.h"
 
+#include <SDL3/SDL_scancode.h>
+
+/**
+ * @file me_and_dad_model.cpp
+ * @brief Implementation of entity factories.
+ *
+ * Factories use @c bagel::World::addComponent (rather than calling
+ * @c Storage::add directly) so that each entity's mask bit is set.
+ * Without this the systems' @c MaskBuilder filters would reject every
+ * entity at runtime.
+ */
+
 namespace me_and_dad
 {
 	namespace
 	{
+		/**
+		 * @brief Create an entity with the three components every visible thing needs.
+		 * @param position World position.
+		 * @param spriteName Sprite key for the renderer.
+		 * @param colliderSize AABB collider size.
+		 * @return The new entity id.
+		 */
 		ent_type createBaseEntity(Vec2 position, const char* spriteName, Vec2 colliderSize)
 		{
 			ent_type entity = bagel::World::createEntity();
 
-			bagel::Storage<Transform>::type::add(entity, {{position.x, position.y}, {1, 1}});
-			bagel::Storage<Renderable>::type::add(entity, {spriteName, -1, true});
-			bagel::Storage<Collider>::type::add(entity, {{0, 0}, colliderSize, true});
+			bagel::World::addComponent<Transform>(entity, {{position.x, position.y}, {1, 1}});
+			bagel::World::addComponent<Renderable>(entity, {spriteName, -1, true});
+			bagel::World::addComponent<Collider>(entity, {{0, 0}, colliderSize, true, b2_nullBodyId});
 
 			return entity;
-		}
-
-		Vec2 directionToVelocity(FacingDirection direction, float speed)
-		{
-			switch (direction) {
-			case FacingDirection::Left:
-				return {-speed, 0};
-			case FacingDirection::Right:
-				return {speed, 0};
-			case FacingDirection::Up:
-				return {0, -speed};
-			case FacingDirection::Down:
-				return {0, speed};
-			}
-
-			return {0, 0};
 		}
 	}
 
@@ -36,19 +39,21 @@ namespace me_and_dad
 	{
 		ent_type entity = createBaseEntity(position, "kid", {42, 64});
 
-		bagel::Storage<PlayerTag>::type::add(entity, {});
-		bagel::Storage<InputControlled>::type::add(entity, {});
-		bagel::Storage<Velocity>::type::add(entity, {{0, 0}, 6});
-		bagel::Storage<Health>::type::add(entity, {100, 100});
-		bagel::Storage<Damage>::type::add(entity, {12});
-		bagel::Storage<Direction>::type::add(entity, {FacingDirection::Right});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<Jump>::type::add(entity, {true, false, 12});
-		bagel::Storage<PowerMode>::type::add(entity, {false, 0});
-		bagel::Storage<Combo>::type::add(entity, {0, 0});
-		bagel::Storage<Level>::type::add(entity, {-1});
-		bagel::Storage<Stats>::type::add(entity, {0, 0, 0});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
+		bagel::World::addComponent<PlayerTag>(entity, {});
+		bagel::World::addComponent<InputControlled>(entity, {});
+		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 6});
+		bagel::World::addComponent<Health>(entity, {5, 5});
+		bagel::World::addComponent<Damage>(entity, {1});
+		bagel::World::addComponent<Direction>(entity, {FacingDirection::Right});
+		bagel::World::addComponent<State>(entity, {EntityState::Idle});
+		bagel::World::addComponent<Intent>(entity, {});
+		bagel::World::addComponent<Keys>(entity, {
+			SDL_SCANCODE_W,
+			SDL_SCANCODE_S,
+			SDL_SCANCODE_A,
+			SDL_SCANCODE_D,
+			SDL_SCANCODE_SPACE
+		});
 
 		return entity;
 	}
@@ -57,15 +62,14 @@ namespace me_and_dad
 	{
 		ent_type entity = createBaseEntity(position, "normal_enemy", {44, 66});
 
-		bagel::Storage<EnemyTag>::type::add(entity, {});
-		bagel::Storage<Velocity>::type::add(entity, {{0, 0}, 3});
-		bagel::Storage<Health>::type::add(entity, {100, 100});
-		bagel::Storage<Damage>::type::add(entity, {8});
-		bagel::Storage<Direction>::type::add(entity, {FacingDirection::Left});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<AI>::type::add(entity, {AiKind::Patrol, 180});
-		bagel::Storage<Path>::type::add(entity, {{{position.x - 80, position.y}, {position.x + 80, position.y}}, 2, 0, true});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
+		bagel::World::addComponent<EnemyTag>(entity, {});
+		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 3});
+		bagel::World::addComponent<Health>(entity, {2, 2});
+		bagel::World::addComponent<Damage>(entity, {1});
+		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
+		bagel::World::addComponent<State>(entity, {EntityState::Idle});
+		bagel::World::addComponent<Intent>(entity, {});
+		bagel::World::addComponent<AI>(entity, {AiKind::ChasePlayer, 180});
 
 		return entity;
 	}
@@ -74,32 +78,15 @@ namespace me_and_dad
 	{
 		ent_type entity = createBaseEntity(position, "special_enemy", {52, 74});
 
-		bagel::Storage<EnemyTag>::type::add(entity, {});
-		bagel::Storage<SpecialEnemyTag>::type::add(entity, {});
-		bagel::Storage<Velocity>::type::add(entity, {{0, 0}, 4});
-		bagel::Storage<Health>::type::add(entity, {100, 100});
-		bagel::Storage<Damage>::type::add(entity, {16});
-		bagel::Storage<Direction>::type::add(entity, {FacingDirection::Left});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<AI>::type::add(entity, {AiKind::SpecialEnemy, 260});
-		bagel::Storage<Path>::type::add(entity, {{{position.x - 120, position.y}, {position.x + 120, position.y}}, 2, 0, true});
-		bagel::Storage<PowerMode>::type::add(entity, {false, 0});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
-
-		return entity;
-	}
-
-	ent_type createThrowableRock(Vec2 position)
-	{
-		ent_type entity = createBaseEntity(position, "rock", {24, 24});
-
-		bagel::Storage<StaticObjectTag>::type::add(entity, {});
-		bagel::Storage<Throwable>::type::add(entity, {true, 10});
-		bagel::Storage<Velocity>::type::add(entity, {{0, 0}, 12});
-		bagel::Storage<Damage>::type::add(entity, {20});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<Interactable>::type::add(entity, {true, 1});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
+		bagel::World::addComponent<EnemyTag>(entity, {});
+		bagel::World::addComponent<SpecialEnemyTag>(entity, {});
+		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 4});
+		bagel::World::addComponent<Health>(entity, {2, 2});
+		bagel::World::addComponent<Damage>(entity, {1});
+		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
+		bagel::World::addComponent<State>(entity, {EntityState::Idle});
+		bagel::World::addComponent<Intent>(entity, {});
+		bagel::World::addComponent<AI>(entity, {AiKind::ChasePlayer, 260});
 
 		return entity;
 	}
@@ -108,70 +95,23 @@ namespace me_and_dad
 	{
 		ent_type entity = createBaseEntity(position, spriteName, colliderSize);
 
-		bagel::Storage<StaticObjectTag>::type::add(entity, {});
+		bagel::World::addComponent<StaticObjectTag>(entity, {});
 		bagel::Storage<Collider>::type::get(entity).solid = solid;
 
 		return entity;
 	}
 
-	ent_type createBullet(Vec2 position, FacingDirection direction)
+	ent_type createFlashEntity(Vec2 position)
 	{
-		ent_type entity = createBaseEntity(position, "bullet", {12, 12});
+		ent_type entity = bagel::World::createEntity();
 
-		bagel::Storage<ProjectileTag>::type::add(entity, {});
-		bagel::Storage<Velocity>::type::add(entity, {directionToVelocity(direction, 14), 14});
-		bagel::Storage<Damage>::type::add(entity, {18});
-		bagel::Storage<Direction>::type::add(entity, {direction});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<Lifetime>::type::add(entity, {3});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
+		bagel::World::addComponent<Transform>(entity, {{position.x, position.y}, {1, 1}});
+		bagel::World::addComponent<Renderable>(entity, {"flash", -1, true});
+		bagel::World::addComponent<FlashEffect>(entity, {6});
 
 		return entity;
 	}
 
-	ent_type createBoard(int levelNumber)
-	{
-		ent_type entity = createBaseEntity({0, 0}, "board", {800, 600});
-
-		bagel::Storage<BoardTag>::type::add(entity, {});
-		bagel::Storage<Level>::type::add(entity, {levelNumber});
-		bagel::Storage<Collider>::type::get(entity).solid = false;
-
-		return entity;
-	}
-
-	ent_type createLegendBoard()
-	{
-		ent_type entity = createBaseEntity({0, 0}, "legend_board", {220, 120});
-
-		bagel::Storage<LegendBoardTag>::type::add(entity, {});
-		bagel::Storage<Collider>::type::get(entity).solid = false;
-
-		return entity;
-	}
-
-	ent_type createBomb(Vec2 position)
-	{
-		ent_type entity = createBaseEntity(position, "bomb", {30, 30});
-
-		bagel::Storage<BombTag>::type::add(entity, {});
-		bagel::Storage<Velocity>::type::add(entity, {{0, 0}, 8});
-		bagel::Storage<Damage>::type::add(entity, {45});
-		bagel::Storage<State>::type::add(entity, {EntityState::Idle});
-		bagel::Storage<Lifetime>::type::add(entity, {5});
-		bagel::Storage<Sound>::type::add(entity, {nullptr, -1});
-
-		return entity;
-	}
-
-	void InputSystem::update() {}
-	void MovementSystem::update() {}
-	void PhysicsSystem::update() {}
-	void CollisionSystem::update() {}
-	void CombatSystem::update() {}
-	void AISystem::update() {}
-	void AbilitySystem::update() {}
-	void RenderSystem::update() {}
-	void SoundSystem::update() {}
-	void LifetimeSystem::update() {}
+	// System implementations live in Game.cpp where they have access to
+	// the SDL renderer and Box2D world via file-scope statics.
 }
