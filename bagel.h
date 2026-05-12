@@ -9,7 +9,7 @@
 
 // Cross-compiler attribute to keep static auto-registration variables alive.
 #if defined(__GNUC__) || defined(__clang__)
-#  define BAGEL_USED BAGEL_USED
+#  define BAGEL_USED __attribute__((used))
 #else
 #  define BAGEL_USED
 #endif
@@ -131,12 +131,18 @@ namespace bagel
 			_compToId.push(ent.id);
 		}
 		static void del(const ent_type ent) {
-			int idx = _idToComp[ent.id];
-			const id_type last = _compToId.pop();
+			const int idx = _idToComp[ent.id];
+			const int lastIdx = _comps.size() - 1;
 
-			_comps[idx] = _comps.pop();
-			_compToId[idx] = last;
-			_idToComp[last] = idx;
+			if (idx != lastIdx) {
+				const id_type lastId = _compToId[lastIdx];
+				_comps[idx] = _comps[lastIdx];
+				_compToId[idx] = lastId;
+				_idToComp[lastId] = idx;
+			}
+
+			_comps.pop();
+			_compToId.pop();
 		}
 		static T& get(const ent_type ent) {
 			return _comps[_idToComp[ent.id]];
@@ -223,7 +229,7 @@ namespace bagel
 			Mask m = _masks[ent.id];
 			int ctz;
 			while ((ctz = m.ctz()) >= 0) {
-				if (_deleters[ctz] != nullptr)
+				if (ctz < _deleters.size() && _deleters[ctz] != nullptr)
 					_deleters[ctz](ent);
 				m.clear(Mask::bit(ctz));
 			}
@@ -240,6 +246,7 @@ namespace bagel
 		}
 		template <class T>
 		static void addComponent(ent_type ent, const T& comp) {
+			registerDeleter<T>(Storage<T>::type::del);
 			_masks[ent.id].set(Component<T>::Bit);
 			Storage<T>::type::add(ent,comp);
 		}

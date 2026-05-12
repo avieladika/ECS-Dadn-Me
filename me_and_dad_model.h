@@ -260,6 +260,7 @@ namespace me_and_dad
 	 */
 	struct FlashEffect {
 		int framesLeft = 0;
+		bool enemyPunch = false;
 	};
 
 	/* ------------------------------------------------------------------ */
@@ -321,7 +322,7 @@ namespace me_and_dad
 	 * @param position Where the flash is drawn.
 	 * @return The entity id.
 	 */
-	ent_type createFlashEntity(Vec2 position = {0, 0});
+	ent_type createFlashEntity(Vec2 position = {0, 0}, bool enemyPunch = false);
 
 	/* ------------------------------------------------------------------ */
 	/*  Systems                                                           */

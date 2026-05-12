@@ -48,10 +48,10 @@ namespace me_and_dad
 		bagel::World::addComponent<State>(entity, {EntityState::Idle});
 		bagel::World::addComponent<Intent>(entity, {});
 		bagel::World::addComponent<Keys>(entity, {
-			SDL_SCANCODE_W,
-			SDL_SCANCODE_S,
-			SDL_SCANCODE_A,
-			SDL_SCANCODE_D,
+			SDL_SCANCODE_UP,
+			SDL_SCANCODE_DOWN,
+			SDL_SCANCODE_LEFT,
+			SDL_SCANCODE_RIGHT,
 			SDL_SCANCODE_SPACE
 		});
 
@@ -101,13 +101,13 @@ namespace me_and_dad
 		return entity;
 	}
 
-	ent_type createFlashEntity(Vec2 position)
+	ent_type createFlashEntity(Vec2 position, bool enemyPunch)
 	{
 		ent_type entity = bagel::World::createEntity();
 
 		bagel::World::addComponent<Transform>(entity, {{position.x, position.y}, {1, 1}});
 		bagel::World::addComponent<Renderable>(entity, {"flash", -1, true});
-		bagel::World::addComponent<FlashEffect>(entity, {6});
+		bagel::World::addComponent<FlashEffect>(entity, {6, enemyPunch});
 
 		return entity;
 	}

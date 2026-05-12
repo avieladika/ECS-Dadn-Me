@@ -54,6 +54,15 @@ namespace me_and_dad
 		/// Called between level transitions and on game-over.
 		void clearAllEntities();
 
+		/// @brief Reset the game back to level 1 after the end screen.
+		void restart();
+
+		/// @brief Handle Play Again / Exit input while the end screen is visible.
+		void handleEndScreenEvent(const SDL_Event& ev, bool& quit);
+
+		/// @brief Draw the win/loss overlay and menu buttons.
+		void renderEndScreen();
+
 		bool          _valid = false;
 		SDL_Window*   _win = nullptr;
 		SDL_Renderer* _ren = nullptr;
