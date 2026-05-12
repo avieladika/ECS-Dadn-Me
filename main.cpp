@@ -1,10 +1,10 @@
-#include <iostream>
-using namespace std;
+#include "Game.h"
 
-#include "bagel.h"
-using namespace bagel;
-
-#include "me_and_dad_model.h"
+/**
+ * @file main.cpp
+ * @brief Entry point for the "Me and Dad" demo. Creates the Game object and
+ *        starts the main loop if initialization succeeded.
+ */
 
 void run_tests();
 
@@ -12,11 +12,9 @@ int main()
 {
 	run_tests();
 
-	me_and_dad::createBoard(1);
-	me_and_dad::createPlayer({100, 400});
-	me_and_dad::createNormalEnemy({300, 400});
-	me_and_dad::createSpecialEnemy({500, 400});
-	me_and_dad::createThrowableRock({220, 420});
-
+	me_and_dad::Game game;
+	if (game.valid()) {
+		game.run();
+	}
 	return 0;
 }
