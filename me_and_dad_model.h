@@ -1,5 +1,6 @@
 #pragma once
 
+#include <initializer_list>
 #include <box2d/box2d.h>
 #include "bagel.h"
 
@@ -45,7 +46,8 @@ namespace me_and_dad
 	 */
 	enum class AiKind {
 		None,
-		ChasePlayer
+		ChasePlayer,
+		Patrol
 	};
 
 	/**
@@ -125,6 +127,13 @@ namespace me_and_dad
 	};
 
 	/**
+	 * @brief Display name assigned to an enemy when it is created.
+	 */
+	struct EnemyName {
+		const char* value = nullptr;
+	};
+
+	/**
 	 * @brief Jump ability data. Unused in the current scope but kept for future levels.
 	 */
 	struct Jump {
@@ -142,7 +151,7 @@ namespace me_and_dad
 	};
 
 	/**
-	 * @brief Patrol route. Kept for future use; not used by the current AI.
+	 * @brief Patrol route followed by enemies.
 	 */
 	struct Path {
 		Vec2 points[8] = {};
@@ -290,18 +299,18 @@ namespace me_and_dad
 	ent_type createPlayer(Vec2 position = {0, 0});
 
 	/**
-	 * @brief Create a normal (Level 1) enemy that walks toward the player but cannot punch.
-	 * @param position Initial world position.
+	 * @brief Create a normal (Level 1) enemy that patrols between waypoints.
+	 * @param patrolPoints Ordered waypoint list. First point is the spawn point.
 	 * @return The entity id.
 	 */
-	ent_type createNormalEnemy(Vec2 position = {0, 0});
+	ent_type createNormalEnemy(std::initializer_list<Vec2> patrolPoints, const char* name);
 
 	/**
-	 * @brief Create a special (Level 2) enemy that walks toward the player AND can punch.
-	 * @param position Initial world position.
+	 * @brief Create a special (Level 2) enemy that patrols and can punch back.
+	 * @param patrolPoints Ordered waypoint list. First point is the spawn point.
 	 * @return The entity id.
 	 */
-	ent_type createSpecialEnemy(Vec2 position = {0, 0});
+	ent_type createSpecialEnemy(std::initializer_list<Vec2> patrolPoints, const char* name);
 
 	/**
 	 * @brief Create a static decoration entity (e.g. a tree, trash can).
@@ -408,6 +417,10 @@ template <> struct bagel::Storage<me_and_dad::Direction> final : NoInstance {
 
 template <> struct bagel::Storage<me_and_dad::State> final : NoInstance {
 	using type = PackedStorage<me_and_dad::State>;
+};
+
+template <> struct bagel::Storage<me_and_dad::EnemyName> final : NoInstance {
+	using type = PackedStorage<me_and_dad::EnemyName>;
 };
 
 template <> struct bagel::Storage<me_and_dad::Intent> final : NoInstance {

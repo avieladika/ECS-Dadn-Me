@@ -35,6 +35,7 @@
 
                 enum class ScreenMode {
                     Playing,
+                    LevelTransition,
                     EndScreen
                 };
 
@@ -45,9 +46,21 @@
 
                 ScreenMode g_screenMode = ScreenMode::Playing;
                 EndReason g_endReason = EndReason::Lost;
+                int g_pendingLevel = 0;
+                Uint64 g_levelTransitionStartedAt = 0;
+                char g_deathNotice[64] = "";
+                Uint64 g_deathNoticeStartedAt = 0;
 
                 constexpr SDL_FRect PLAY_AGAIN_BUTTON = {270.f, 335.f, 260.f, 54.f};
                 constexpr SDL_FRect EXIT_BUTTON = {270.f, 405.f, 260.f, 54.f};
+                constexpr Uint64 LEVEL_TRANSITION_MS = 2000;
+                constexpr Uint64 DEATH_NOTICE_MS = 2500;
+                constexpr const char* ENEMY_NAMES[20] = {
+                    "Adam", "Ben", "Daniel", "Ethan", "Gabriel",
+                    "Henry", "Isaac", "Jack", "Liam", "Mason",
+                    "Noah", "Oliver", "Owen", "Ryan", "Samuel",
+                    "Thomas", "William", "Yoni", "Zach", "Ariel"
+                };
 
                 /// @brief Map a Renderable sprite name to the loaded SDL texture.
                 SDL_Texture* texFor(const char* name) {
@@ -92,12 +105,78 @@
                     SDL_SetRenderScale(g_ren, 1.f, 1.f);
                 }
 
+                void drawDebugText(const char* text, float x, float y, float scale) {
+                    SDL_SetRenderScale(g_ren, scale, scale);
+                    SDL_RenderDebugText(g_ren, x / scale, y / scale, text);
+                    SDL_SetRenderScale(g_ren, 1.f, 1.f);
+                }
+
                 void drawButton(const SDL_FRect& rect, const char* label) {
                     SDL_SetRenderDrawColor(g_ren, 245, 245, 245, 255);
                     SDL_RenderFillRect(g_ren, &rect);
                     SDL_SetRenderDrawColor(g_ren, 20, 25, 30, 255);
                     SDL_RenderRect(g_ren, &rect);
                     drawCenteredDebugText(label, rect.x + rect.w / 2.f, rect.y + 18.f, 2.f);
+                }
+
+                void startLevelTransition(int level) {
+                    g_pendingLevel = level;
+                    g_levelTransitionStartedAt = SDL_GetTicks();
+                    g_screenMode = ScreenMode::LevelTransition;
+                }
+
+                void renderLevelTransition() {
+                    const Uint64 elapsed = SDL_GetTicks() - g_levelTransitionStartedAt;
+                    const bool visible = (elapsed / 250) % 2 == 0;
+                    if (!visible) return;
+
+                    char text[32];
+                    SDL_snprintf(text, sizeof(text), "LEVEL %d", g_pendingLevel);
+
+                    SDL_SetRenderDrawBlendMode(g_ren, SDL_BLENDMODE_BLEND);
+                    SDL_SetRenderDrawColor(g_ren, 0, 0, 0, 130);
+                    SDL_FRect overlay = {0, 0, static_cast<float>(Game::WIN_W), static_cast<float>(Game::WIN_H)};
+                    SDL_RenderFillRect(g_ren, &overlay);
+                    SDL_SetRenderDrawBlendMode(g_ren, SDL_BLENDMODE_NONE);
+
+                    SDL_SetRenderDrawColor(g_ren, 255, 255, 255, 255);
+                    drawCenteredDebugText(text, Game::WIN_W / 2.f, 255.f, 6.f);
+                    SDL_SetRenderDrawColor(g_ren, 0, 0, 0, 255);
+                }
+
+                void showEnemyDeathNotice(const char* name) {
+                    if (!name) return;
+                    SDL_snprintf(g_deathNotice, sizeof(g_deathNotice), "%s - died", name);
+                    g_deathNoticeStartedAt = SDL_GetTicks();
+                }
+
+                void spawnLevel1Enemies() {
+                    createNormalEnemy({
+                            Vec2{50, 80}, Vec2{750, 80}, Vec2{750, 220}, Vec2{50, 220}
+                    }, ENEMY_NAMES[0]);
+                    createNormalEnemy({
+                            Vec2{700, 80}, Vec2{600, 250}, Vec2{700, 400}, Vec2{600, 520}
+                    }, ENEMY_NAMES[1]);
+                    createNormalEnemy({
+                            Vec2{50, 420}, Vec2{200, 520}, Vec2{400, 400},
+                            Vec2{600, 520}, Vec2{750, 420}
+                    }, ENEMY_NAMES[2]);
+                }
+
+                void spawnLevel2Enemies() {
+                    createSpecialEnemy({
+                            Vec2{400, 120}, Vec2{680, 300}, Vec2{400, 480}, Vec2{120, 300}
+                    }, ENEMY_NAMES[3]);
+                    createSpecialEnemy({
+                            Vec2{100, 80}, Vec2{100, 520}, Vec2{320, 520}, Vec2{320, 80}
+                    }, ENEMY_NAMES[4]);
+                    createSpecialEnemy({
+                            Vec2{50, 100}, Vec2{400, 250}, Vec2{750, 100},
+                            Vec2{750, 450}, Vec2{400, 520}, Vec2{50, 450}
+                    }, ENEMY_NAMES[5]);
+                    createSpecialEnemy({
+                            Vec2{550, 120}, Vec2{750, 300}, Vec2{550, 500}
+                    }, ENEMY_NAMES[6]);
                 }
             }
 
@@ -174,14 +253,9 @@
                 createPlayer({100, WIN_H / 2.f});
 
                 if (level == 1) {
-                    createNormalEnemy({500, 200});
-                    createNormalEnemy({600, 400});
-                    createNormalEnemy({700, 300});
+                    spawnLevel1Enemies();
                 } else {
-                    createSpecialEnemy({500, 200});
-                    createSpecialEnemy({600, 400});
-                    createSpecialEnemy({700, 300});
-                    createSpecialEnemy({400, 450});
+                    spawnLevel2Enemies();
                 }
             }
 
@@ -199,6 +273,10 @@
                 g_currentLevel = 1;
                 g_gameOver = false;
                 g_endReason = EndReason::Lost;
+                g_pendingLevel = 0;
+                g_levelTransitionStartedAt = 0;
+                g_deathNotice[0] = '\0';
+                g_deathNoticeStartedAt = 0;
                 g_screenMode = ScreenMode::Playing;
                 spawnLevel(1);
             }
@@ -275,9 +353,23 @@
                         LevelSystem::update();
                     }
 
+                    if (g_screenMode == ScreenMode::LevelTransition &&
+                        SDL_GetTicks() - g_levelTransitionStartedAt >= LEVEL_TRANSITION_MS) {
+                        if (g_pendingLevel == 2) {
+                            spawnLevel2Enemies();
+                            g_currentLevel = 2;
+                        }
+                        g_pendingLevel = 0;
+                        g_levelTransitionStartedAt = 0;
+                        g_screenMode = ScreenMode::Playing;
+                    }
+
                     SDL_RenderClear(_ren);
                     RenderSystem::update();
                     HudSystem::update();
+                    if (g_screenMode == ScreenMode::LevelTransition) {
+                        renderLevelTransition();
+                    }
                     if (g_screenMode == ScreenMode::EndScreen) {
                         renderEndScreen();
                     }
@@ -319,12 +411,15 @@
             void AISystem::update()
             {
                 const auto pid = findPlayer();
-                if (pid.id < 0) return;
-                bagel::Entity player{pid};
-                const auto& playerT = player.get<Transform>();
+                const bool hasPlayer = pid.id >= 0;
+                Vec2 playerPos = {};
+                if (hasPlayer) {
+                    bagel::Entity player{pid};
+                    playerPos = player.get<Transform>().position;
+                }
 
                 static const bagel::Mask m = bagel::MaskBuilder()
-                        .set<EnemyTag>().set<AI>().set<Intent>().set<Transform>().build();
+                        .set<EnemyTag>().set<AI>().set<Intent>().set<Transform>().set<Path>().build();
 
                 for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
                     if (!e.test(m)) continue;
@@ -334,21 +429,31 @@
                     const auto& a = e.get<AI>();
 
                     i = {};
-                    if (a.kind != AiKind::ChasePlayer) continue;
+                    if (a.kind != AiKind::Patrol) continue;
 
-                    const float dx = playerT.position.x - t.position.x;
-                    const float dy = playerT.position.y - t.position.y;
-                    const float dist = std::sqrt(dx*dx + dy*dy);
+                    auto& path = e.get<Path>();
+                    if (path.pointCount <= 0) continue;
 
-                    if (dist > 50) {
+                    const Vec2 target = path.points[path.currentPoint];
+                    const float dx = target.x - t.position.x;
+                    const float dy = target.y - t.position.y;
+
+                    if (std::abs(dx) < 5 && std::abs(dy) < 5) {
+                        ++path.currentPoint;
+                        if (path.currentPoint >= path.pointCount) {
+                            path.currentPoint = path.loop ? 0 : path.pointCount - 1;
+                        }
+                    } else {
                         if (dx < -2) i.left  = true;
                         if (dx >  2) i.right = true;
                         if (dy < -2) i.up    = true;
                         if (dy >  2) i.down  = true;
                     }
 
-                    // Level-2 enemies (CanPunchBack) attack when close.
-                    if (e.has<SpecialEnemyTag>() && dist < 60 && !e.has<Punching>()) {
+                    const float playerDx = playerPos.x - t.position.x;
+                    const float playerDy = playerPos.y - t.position.y;
+                    const float playerDist = std::sqrt(playerDx * playerDx + playerDy * playerDy);
+                    if (hasPlayer && e.has<SpecialEnemyTag>() && playerDist < 60 && !e.has<Punching>()) {
                         i.punch = true;
                     }
                 }
@@ -536,6 +641,9 @@
                 static const bagel::Mask m = bagel::MaskBuilder().set<Health>().build();
                 for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
                     if (e.test(m) && e.get<Health>().current <= 0) {
+                        if (e.has<EnemyTag>() && e.has<EnemyName>()) {
+                            showEnemyDeathNotice(e.get<EnemyName>().value);
+                        }
                         e.destroy();
                     }
                 }
@@ -558,12 +666,7 @@
                 if (countEnemies() == 0) {
                     if (g_currentLevel == 1) {
                         std::cout << "Level 1 cleared - advancing to Level 2" << std::endl;
-                        // Spawn a new wave of stronger enemies. Don't despawn the player.
-                        createSpecialEnemy({500, 200});
-                        createSpecialEnemy({600, 400});
-                        createSpecialEnemy({700, 300});
-                        createSpecialEnemy({400, 450});
-                        g_currentLevel = 2;
+                        startLevelTransition(2);
                     } else {
                         std::cout << "You win!" << std::endl;
                         g_gameOver = true;
@@ -653,6 +756,16 @@
                     SDL_FRect r = {10 + i * 24.f, 10, 20, 20};
                     SDL_RenderFillRect(g_ren, &r);
                 }
+
+                if (g_deathNotice[0] != '\0' &&
+                    SDL_GetTicks() - g_deathNoticeStartedAt < DEATH_NOTICE_MS) {
+                    constexpr float scale = 2.f;
+                    const float width = SDL_strlen(g_deathNotice) *
+                                        SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
+                    SDL_SetRenderDrawColor(g_ren, 255, 255, 255, 255);
+                    drawDebugText(g_deathNotice, Game::WIN_W - width - 16.f, 14.f, scale);
+                }
+
                 SDL_SetRenderDrawColor(g_ren, 0, 0, 0, 255);
             }
         }

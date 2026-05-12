@@ -33,6 +33,20 @@ namespace me_and_dad
 
 			return entity;
 		}
+
+		Path buildPath(std::initializer_list<Vec2> points)
+		{
+			Path path = {};
+			for (const auto& point : points) {
+				if (path.pointCount < 8) {
+					path.points[path.pointCount++] = point;
+				}
+			}
+			path.currentPoint = 0;
+			path.loop = true;
+			return path;
+		}
+
 	}
 
 	ent_type createPlayer(Vec2 position)
@@ -58,35 +72,43 @@ namespace me_and_dad
 		return entity;
 	}
 
-	ent_type createNormalEnemy(Vec2 position)
+	ent_type createNormalEnemy(std::initializer_list<Vec2> patrolPoints, const char* name)
 	{
-		ent_type entity = createBaseEntity(position, "normal_enemy", {44, 66});
+		const Path path = buildPath(patrolPoints);
+		const Vec2 spawn = path.pointCount > 0 ? path.points[0] : Vec2{0, 0};
+		ent_type entity = createBaseEntity(spawn, "normal_enemy", {44, 66});
 
 		bagel::World::addComponent<EnemyTag>(entity, {});
-		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 3});
+		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 1.5f});
 		bagel::World::addComponent<Health>(entity, {2, 2});
 		bagel::World::addComponent<Damage>(entity, {1});
 		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
 		bagel::World::addComponent<State>(entity, {EntityState::Idle});
+		bagel::World::addComponent<EnemyName>(entity, {name});
 		bagel::World::addComponent<Intent>(entity, {});
-		bagel::World::addComponent<AI>(entity, {AiKind::ChasePlayer, 180});
+		bagel::World::addComponent<AI>(entity, {AiKind::Patrol, 0});
+		bagel::World::addComponent<Path>(entity, path);
 
 		return entity;
 	}
 
-	ent_type createSpecialEnemy(Vec2 position)
+	ent_type createSpecialEnemy(std::initializer_list<Vec2> patrolPoints, const char* name)
 	{
-		ent_type entity = createBaseEntity(position, "special_enemy", {52, 74});
+		const Path path = buildPath(patrolPoints);
+		const Vec2 spawn = path.pointCount > 0 ? path.points[0] : Vec2{0, 0};
+		ent_type entity = createBaseEntity(spawn, "special_enemy", {52, 74});
 
 		bagel::World::addComponent<EnemyTag>(entity, {});
 		bagel::World::addComponent<SpecialEnemyTag>(entity, {});
-		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 4});
+		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 2.f});
 		bagel::World::addComponent<Health>(entity, {2, 2});
 		bagel::World::addComponent<Damage>(entity, {1});
 		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
 		bagel::World::addComponent<State>(entity, {EntityState::Idle});
+		bagel::World::addComponent<EnemyName>(entity, {name});
 		bagel::World::addComponent<Intent>(entity, {});
-		bagel::World::addComponent<AI>(entity, {AiKind::ChasePlayer, 260});
+		bagel::World::addComponent<AI>(entity, {AiKind::Patrol, 0});
+		bagel::World::addComponent<Path>(entity, path);
 
 		return entity;
 	}

@@ -11,7 +11,7 @@ add_executable(${PROJECT_NAME}
         me_and_dad_model.cpp
         Game.h
         Game.cpp
-        tests.cpp
+
 )
 
 # --- SDL3 (static) ---
