@@ -4,7 +4,6 @@
 #include <box2d/box2d.h>
 
 /**
- * @file Game.h
  * @brief Top-level "Me and Dad" game class. Owns SDL and Box2D resources
  *        and runs the game loop that drives all ECS systems.
  */
@@ -26,7 +25,6 @@ namespace me_and_dad
 
 		/// @brief Destroy SDL/Box2D resources.
 		~Game();
-
 		Game(const Game&) = delete;
 		Game& operator=(const Game&) = delete;
 
@@ -36,13 +34,16 @@ namespace me_and_dad
 		/// @brief @c true if initialization succeeded.
 		bool valid() const { return _valid; }
 
-		static constexpr int   WIN_W = 800;
-		static constexpr int   WIN_H = 600;
-		static constexpr int   FPS = 60;
-		static constexpr int   GAME_FRAME_MS = 1000 / FPS;
-		static constexpr float BOX_SCALE = 10.f;
+		// --- Game tuning constants ---------------------------------------
+		static constexpr int   WIN_W = 800;                // Window width in pixels.
+		static constexpr int   WIN_H = 600;                // Window height in pixels.
+		static constexpr int   FPS = 60;                   // Target frames per second.
+		static constexpr int   GAME_FRAME_MS = 1000 / FPS; // ms per frame budget (~16ms at 60fps).
+		static constexpr float BOX_SCALE = 10.f;           // Pixels-per-Box2D-meter conversion factor.
 
 	private:
+		// --- Helper methods used by the constructor and run loop ---------
+
 		/// @brief Load every PNG/JPG used by the game.
 		bool loadTextures();
 
@@ -63,9 +64,10 @@ namespace me_and_dad
 		/// @brief Draw the win/loss overlay and menu buttons.
 		void renderEndScreen();
 
-		bool          _valid = false;
-		SDL_Window*   _win = nullptr;
-		SDL_Renderer* _ren = nullptr;
-		b2WorldId     _world = b2_nullWorldId;
+		// --- Member variables -------------------------------------------
+		bool          _valid = false;                 // Initialization succeeded?
+		SDL_Window*   _win = nullptr;                 // The OS window (owned).
+		SDL_Renderer* _ren = nullptr;                 // The 2D renderer (owned).
+		b2WorldId     _world = b2_nullWorldId;        // Box2D physics world handle.
 	};
 }

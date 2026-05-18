@@ -5,7 +5,6 @@
 #include "bagel.h"
 
 /**
- * @file me_and_dad_model.h
  * @brief Game model for "Me and Dad" - components, entity factories and systems.
  */
 
@@ -54,12 +53,19 @@ namespace me_and_dad
 	 * @brief Simple 2D vector used for positions, sizes and velocities.
 	 */
 	struct Vec2 {
+		// Default-initialized to (0, 0) so any zero-init of an owner struct
+		// also produces a sane vector value.
 		float x = 0;
 		float y = 0;
 	};
 
 	/* ------------------------------------------------------------------ */
 	/*  Persistent components                                             */
+	/*                                                                    */
+	/*  "Persistent" means: once attached to an entity, the component     */
+	/*  stays there for the entity's whole lifetime. Compare to the       */
+	/*  "transient" components below (Punching, IFrames, FlashEffect),    */
+	/*  which are added and removed on the fly by LifetimeSystem.         */
 	/* ------------------------------------------------------------------ */
 
 	/**
@@ -217,6 +223,12 @@ namespace me_and_dad
 
 	/* ------------------------------------------------------------------ */
 	/*  New components for Ex 3 gameplay                                  */
+	/*                                                                    */
+	/*  Intent / Keys / Punching / IFrames / FlashEffect were added       */
+	/*  specifically to support the combat + input-driven gameplay.       */
+	/*  Intent + Keys are persistent; the others are transient (added     */
+	/*  during a punch / after being hit / for the flash visual, then     */
+	/*  removed by LifetimeSystem when their timer reaches zero).         */
 	/* ------------------------------------------------------------------ */
 
 	/**
@@ -274,6 +286,10 @@ namespace me_and_dad
 
 	/* ------------------------------------------------------------------ */
 	/*  Tag components (no data, just a bit in the entity mask)           */
+	/*                                                                    */
+	/*  These are empty structs - they exist only so a system can ask     */
+	/*  "does this entity have PlayerTag?". They cost zero memory per     */
+	/*  entity (see TaggedStorage in the bottom of this file).            */
 	/* ------------------------------------------------------------------ */
 
 	/** @brief Marker: this entity reads keyboard input. */
@@ -289,6 +305,11 @@ namespace me_and_dad
 
 	/* ------------------------------------------------------------------ */
 	/*  Entity factory functions                                          */
+	/*                                                                    */
+	/*  These are the only public entry points for spawning game objects. */
+	/*  Each one calls bagel::World::createEntity() and attaches the      */
+	/*  right components - see me_and_dad_model.cpp for the step-by-step  */
+	/*  walkthrough of what every factory does.                           */
 	/* ------------------------------------------------------------------ */
 
 	/**
@@ -335,6 +356,14 @@ namespace me_and_dad
 
 	/* ------------------------------------------------------------------ */
 	/*  Systems                                                           */
+	/*                                                                    */
+	/*  Each system is just a struct with one static update() method.     */
+	/*  No state, no instances - so we can call e.g. InputSystem::update()*/
+	/*  from Game::run() without owning any object.                       */
+	/*                                                                    */
+	/*  The systems are defined in Game.cpp (not next to the factories)   */
+	/*  because they need direct access to the SDL renderer and the       */
+	/*  Box2D world, both of which live in Game.cpp's file-scope statics. */
 	/* ------------------------------------------------------------------ */
 
 	/** @brief Reads the keyboard and writes player @ref Intent. */
@@ -370,9 +399,35 @@ namespace me_and_dad
 
 /* ---------------------------------------------------------------------- */
 /*  Storage specializations                                               */
-/*  - Tagged storage for marker components (no data)                      */
-/*  - Packed storage for components present on only a few entities        */
-/*  - Sparse storage (default) for components most entities have          */
+/*                                                                        */
+/*  Each component type below tells bagel HOW to store it.                */
+/*                                                                        */
+/*  Step-by-step what each block does:                                    */
+/*    1. `template <> struct bagel::Storage<T>` is an explicit            */
+/*       specialization - we override bagel's default storage choice      */
+/*       just for component type T.                                       */
+/*    2. `final : NoInstance` means: this struct is just a type-level     */
+/*       configuration, you can never make an object of it.               */
+/*    3. `using type = XxxStorage<T>` is the actual decision - it         */
+/*       picks the data-structure bagel uses internally.                  */
+/*                                                                        */
+/*  We pick the storage based on how many entities have the component:    */
+/*                                                                        */
+/*    TaggedStorage  - marker components (no data, just a bit).           */
+/*                     Stores nothing per entity except the mask bit.     */
+/*                                                                        */
+/*    PackedStorage  - components only a few entities have.               */
+/*                     Stores them in a tight array indexed by a sparse   */
+/*                     lookup. Saves memory vs. a full array.             */
+/*                                                                        */
+/*    SparseStorage  - the default (not used here). A direct array        */
+/*                     indexed by entity id. Best when most entities      */
+/*                     have the component (uses more memory).             */
+/*                                                                        */
+/*  Tag components (InputControlled, PlayerTag, EnemyTag, ...) use        */
+/*  TaggedStorage because they hold zero data. Everything else here uses  */
+/*  PackedStorage because only player + enemies + a few effects have      */
+/*  them, so a full sparse array would waste memory.                      */
 /* ---------------------------------------------------------------------- */
 
 template <> struct bagel::Storage<me_and_dad::InputControlled> final : NoInstance {
