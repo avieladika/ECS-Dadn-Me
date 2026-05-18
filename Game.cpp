@@ -33,6 +33,10 @@
                 SDL_Texture*  g_texEnemies = nullptr;     // Normal + special enemy sprite sheet.
                 SDL_Texture*  g_texBackground = nullptr;  // Full-screen background image.
 
+                // Box2D physics world, borrowed from Game (not owned here). Used by
+                // PhysicsSystem to step the simulation and by the body helpers below.
+                b2WorldId g_world = b2_nullWorldId;
+
                 // Gameplay state shared by Game and the LevelSystem. Reset by restart().
                 int g_currentLevel = 1;   // 1 = passive enemies, 2 = punch-back enemies.
                 bool g_gameOver = false;  // True once the player wins or loses.
@@ -73,6 +77,10 @@
                 // notice stays on screen. Both in milliseconds.
                 constexpr Uint64 LEVEL_TRANSITION_MS = 2000;
                 constexpr Uint64 DEATH_NOTICE_MS = 2500;
+                // Box2D works in meters; the game works in pixels. PPM converts
+                // between them (10 px = 1 m), keeping body sizes in the range
+                // Box2D is tuned for instead of feeding it 800-unit-wide objects.
+                constexpr float PPM = 10.f;
                 // One name per enemy, used so the death notice can show
                 // "Daniel - died" instead of just "enemy died".
                 constexpr const char* ENEMY_NAMES[7] = {
@@ -116,6 +124,66 @@
                         if (e.test(m)) ++n;
                     }
                     return n;
+                }
+
+                /* ----------------------------------------------------------- */
+                /*  Box2D body helpers                                         */
+                /* ----------------------------------------------------------- */
+                // The "small slice" of physics: every player/enemy gets a dynamic
+                // Box2D body so they physically block each other and the walls.
+                // Bodies are created lazily (the factories have no access to the
+                // world) and must be destroyed by hand before their entity dies.
+
+                // Create one static wall body. Center + half-extents are passed in
+                // pixels and converted to meters here.
+                void createWall(float cx, float cy, float halfW, float halfH) {
+                    b2BodyDef bd = b2DefaultBodyDef();
+                    bd.type = b2_staticBody;
+                    bd.position = {cx / PPM, cy / PPM};
+                    b2BodyId body = b2CreateBody(g_world, &bd);
+                    b2Polygon box = b2MakeBox(halfW / PPM, halfH / PPM);
+                    b2ShapeDef sd = b2DefaultShapeDef();
+                    b2CreatePolygonShape(body, &sd, &box);
+                }
+
+                // Build four static walls just outside the screen edges so no body
+                // can leave the playfield. Called once from the Game constructor.
+                void buildScreenWalls() {
+                    constexpr float T = 20.f;                    // Wall thickness (px).
+                    constexpr float W = Game::WIN_W, H = Game::WIN_H;
+                    createWall(W / 2, -T / 2,    W / 2, T / 2);   // Top.
+                    createWall(W / 2, H + T / 2, W / 2, T / 2);   // Bottom.
+                    createWall(-T / 2, H / 2,    T / 2, H / 2);   // Left.
+                    createWall(W + T / 2, H / 2, T / 2, H / 2);   // Right.
+                }
+
+                // Lazily create the Box2D body for a collidable entity. A dynamic
+                // body with a box shape sized from the Collider; rotation is locked
+                // so sprites never spin and sleep is disabled so it stays responsive.
+                void ensureBody(bagel::Entity e) {
+                    auto& c = e.get<Collider>();
+                    if (b2Body_IsValid(c.body)) return;          // Already has one.
+                    const auto& t = e.get<Transform>();
+                    b2BodyDef bd = b2DefaultBodyDef();
+                    bd.type = b2_dynamicBody;
+                    bd.position = {t.position.x / PPM, t.position.y / PPM};
+                    bd.motionLocks.angularZ = true;              // No spinning.
+                    bd.enableSleep = false;                      // Stay responsive.
+                    c.body = b2CreateBody(g_world, &bd);
+                    b2Polygon box = b2MakeBox((c.size.x / 2) / PPM, (c.size.y / 2) / PPM);
+                    b2ShapeDef sd = b2DefaultShapeDef();
+                    b2CreatePolygonShape(c.body, &sd, &box);
+                }
+
+                // Destroy an entity's Box2D body, if it has one. Must be called
+                // before bagel destroys the entity, otherwise the body leaks.
+                void destroyBody(bagel::Entity e) {
+                    if (!e.has<Collider>()) return;
+                    auto& c = e.get<Collider>();
+                    if (b2Body_IsValid(c.body)) {
+                        b2DestroyBody(c.body);
+                        c.body = b2_nullBodyId;
+                    }
                 }
 
                 // Classic AABB point-in-rectangle test. Used to detect mouse clicks
@@ -276,6 +344,10 @@
                     std::cout << "Failed to create Box2D world" << std::endl;
                     return;
                 }
+                // Publish the world to the file-scope global so PhysicsSystem and
+                // the body helpers can reach it, then fence the playfield with walls.
+                g_world = _world;
+                buildScreenWalls();
 
                 // Step 5: seed SDL's RNG with the current tick count so any
                 // randomness (currently unused) is fresh per launch.
@@ -359,7 +431,10 @@
                 // so this effectively means "destroy every gameplay entity".
                 static const bagel::Mask m = bagel::MaskBuilder().set<Transform>().build();
                 for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
-                    if (e.test(m)) e.destroy();
+                    if (e.test(m)) {
+                        destroyBody(e);   // Release the Box2D body first, or it leaks.
+                        e.destroy();
+                    }
                 }
             }
 
@@ -445,7 +520,7 @@
 
                 // The main game loop. Each iteration is one frame, capped to ~16ms (60 FPS).
                 while (!quit) {
-                    /* ---------- Phase 1: process OS events ---------- */
+                    /* ---------- Phase 1: process OS (Operating System) events ---------- */
                     // SDL_PollEvent drains the OS event queue, one event at a time.
                     SDL_Event ev;
                     while (SDL_PollEvent(&ev)) {
@@ -616,21 +691,18 @@
 
             void MovementSystem::update()
             {
-                // Step 1: filter mask + half-size constants used for screen clamping.
-                // HALF_W / HALF_H are the player/enemy sprite half-sizes so the
-                // entity's center stays inside the visible area.
+                // Step 1: filter mask. This system only computes a desired Velocity
+                // from Intent; PhysicsSystem applies it to the Box2D body and the
+                // body/walls take care of integration + keeping entities on screen.
                 static const bagel::Mask m = bagel::MaskBuilder()
                         .set<Intent>().set<Velocity>().set<Transform>().build();
-
-                constexpr float HALF_W = 32.f;
-                constexpr float HALF_H = 48.f;
 
                 for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
                     if (!e.test(m)) continue;
 
                     const auto& i = e.get<Intent>();
                     auto& v = e.get<Velocity>();
-                    auto& t = e.get<Transform>();
+                    const auto& t = e.get<Transform>();
 
                     // Step 2: convert four boolean Intent flags into a direction vector.
                     // Up = -Y, down = +Y (SDL screen-space). Holding two keys gives
@@ -696,18 +768,7 @@
                     if (std::abs(v.value.x) < 0.05f) v.value.x = 0;
                     if (std::abs(v.value.y) < 0.05f) v.value.y = 0;
 
-                    // Step 7: integrate position from velocity. Since this is a
-                    // 60 FPS game we just add velocity directly (units are px/frame).
-                    t.position.x += v.value.x;
-                    t.position.y += v.value.y;
-
-                    // Step 8: clamp position to the screen so entities can't walk off.
-                    if (t.position.x < HALF_W) t.position.x = HALF_W;
-                    if (t.position.x > Game::WIN_W - HALF_W) t.position.x = Game::WIN_W - HALF_W;
-                    if (t.position.y < HALF_H) t.position.y = HALF_H;
-                    if (t.position.y > Game::WIN_H - HALF_H) t.position.y = Game::WIN_H - HALF_H;
-
-                    // Step 9: update facing for sprite flip + punch hitbox direction.
+                    // Step 7: update facing for sprite flip + punch hitbox direction.
                     // Horizontal motion wins over vertical so the sprite-flip looks
                     // natural when both axes are pressed.
                     if (e.has<Direction>()) {
@@ -722,10 +783,42 @@
 
             void PhysicsSystem::update()
             {
-                // Reserved for Phase 2: step Box2D world and copy transforms back.
-                // Currently MovementSystem integrates position directly, so this
-                // is a no-op placeholder kept here so run()'s system order matches
-                // the documented architecture.
+                // The world is created by Game; bail out if it never came up.
+                if (!b2World_IsValid(g_world)) return;
+
+                // Matches every collidable, movable entity (player + enemies).
+                static const bagel::Mask m = bagel::MaskBuilder()
+                        .set<Collider>().set<Transform>().build();
+
+                // Step 1: make sure each entity has a body, then push the desired
+                // velocity computed by MovementSystem onto it. Velocity.value is in
+                // px/frame; Box2D wants m/s, hence the * FPS / PPM conversion.
+                for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
+                    if (!e.test(m)) continue;
+                    ensureBody(e);
+                    const auto& c = e.get<Collider>();
+                    if (e.has<Velocity>()) {
+                        const auto& v = e.get<Velocity>();
+                        b2Body_SetLinearVelocity(c.body, {
+                            v.value.x * Game::FPS / PPM,
+                            v.value.y * Game::FPS / PPM
+                        });
+                    }
+                }
+
+                // Step 2: advance the simulation by exactly one frame. The solver
+                // resolves overlaps, so bodies push each other apart and stop at walls.
+                b2World_Step(g_world, 1.f / Game::FPS, 4);
+
+                // Step 3: copy each solved body position back into its Transform so
+                // the render / combat / AI systems all see the post-physics state.
+                for (bagel::Entity e = bagel::Entity::first(); !e.eof(); e.next()) {
+                    if (!e.test(m)) continue;
+                    const auto& c = e.get<Collider>();
+                    if (!b2Body_IsValid(c.body)) continue;
+                    const b2Vec2 p = b2Body_GetPosition(c.body);
+                    e.get<Transform>().position = {p.x * PPM, p.y * PPM};
+                }
             }
 
             void CombatSystem::update()
@@ -862,6 +955,7 @@
                         if (e.has<EnemyTag>() && e.has<EnemyName>()) {
                             showEnemyDeathNotice(e.get<EnemyName>().value);
                         }
+                        destroyBody(e);   // Free the Box2D body before the entity goes.
                         e.destroy();
                     }
                 }

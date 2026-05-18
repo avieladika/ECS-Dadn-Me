@@ -321,7 +321,7 @@ namespace me_and_dad
 	/** @brief Decides enemy behavior and writes enemy @ref Intent. */
 	struct AISystem { static void update(); };
 
-	/** @brief Translates @ref Intent into Box2D velocity on the entity's body. */
+	/** @brief Translates @ref Intent into a desired @ref Velocity. */
 	struct MovementSystem { static void update(); };
 
 	/** @brief Steps the Box2D world and copies physics transforms back to @ref Transform. */
