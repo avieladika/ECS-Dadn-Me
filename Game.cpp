@@ -32,7 +32,6 @@
                 SDL_Texture*  g_texPlayer = nullptr;      // "kid" sprite.
                 SDL_Texture*  g_texEnemies = nullptr;     // Normal + special enemy sprite sheet.
                 SDL_Texture*  g_texBackground = nullptr;  // Full-screen background image.
-                SDL_Texture*  g_texTree = nullptr;        // Reserved decoration texture.
 
                 // Gameplay state shared by Game and the LevelSystem. Reset by restart().
                 int g_currentLevel = 1;   // 1 = passive enemies, 2 = punch-back enemies.
@@ -74,13 +73,10 @@
                 // notice stays on screen. Both in milliseconds.
                 constexpr Uint64 LEVEL_TRANSITION_MS = 2000;
                 constexpr Uint64 DEATH_NOTICE_MS = 2500;
-                // A pool of 20 names. Each enemy spawns with one of these so the
-                // death notice can show "Daniel - died" instead of just "enemy died".
-                constexpr const char* ENEMY_NAMES[20] = {
-                    "Adam", "Ben", "Daniel", "Ethan", "Gabriel",
-                    "Henry", "Isaac", "Jack", "Liam", "Mason",
-                    "Noah", "Oliver", "Owen", "Ryan", "Samuel",
-                    "Thomas", "William", "Yoni", "Zach", "Ariel"
+                // One name per enemy, used so the death notice can show
+                // "Daniel - died" instead of just "enemy died".
+                constexpr const char* ENEMY_NAMES[7] = {
+                    "Adam", "Ben", "Daniel", "Ethan", "Gabriel", "Henry", "Isaac"
                 };
 
                 /// @brief Map a Renderable sprite name to the loaded SDL texture.
@@ -94,7 +90,6 @@
                     if (SDL_strcmp(name, "normal_enemy") == 0)   return g_texEnemies;
                     if (SDL_strcmp(name, "special_enemy") == 0)  return g_texEnemies;
                     if (SDL_strcmp(name, "background") == 0)     return g_texBackground;
-                    if (SDL_strcmp(name, "tree") == 0)           return g_texTree;
                     return nullptr;
                 }
 
@@ -304,7 +299,6 @@
                 if (g_texPlayer)     SDL_DestroyTexture(g_texPlayer);
                 if (g_texEnemies)    SDL_DestroyTexture(g_texEnemies);
                 if (g_texBackground) SDL_DestroyTexture(g_texBackground);
-                if (g_texTree)       SDL_DestroyTexture(g_texTree);
                 if (_ren)            SDL_DestroyRenderer(_ren);
                 if (_win)            SDL_DestroyWindow(_win);
                 // Shuts down all SDL subsystems initialized with SDL_Init.
@@ -336,11 +330,10 @@
                 g_texPlayer     = load("res/player.png");
                 g_texEnemies    = load("res/enemies.jpg");
                 g_texBackground = load("res/background.jpg");
-                g_texTree       = load("res/tree_object.jpg");
 
                 // Step 3: succeed only if every texture loaded. Short-circuit && stops
                 // at the first nullptr.
-                return g_texPlayer && g_texEnemies && g_texBackground && g_texTree;
+                return g_texPlayer && g_texEnemies && g_texBackground;
             }
 
             void Game::spawnLevel(int level)

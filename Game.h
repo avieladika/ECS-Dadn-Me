@@ -39,7 +39,6 @@ namespace me_and_dad
 		static constexpr int   WIN_H = 600;                // Window height in pixels.
 		static constexpr int   FPS = 60;                   // Target frames per second.
 		static constexpr int   GAME_FRAME_MS = 1000 / FPS; // ms per frame budget (~16ms at 60fps).
-		static constexpr float BOX_SCALE = 10.f;           // Pixels-per-Box2D-meter conversion factor.
 
 	private:
 		// --- Helper methods used by the constructor and run loop ---------

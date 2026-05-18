@@ -23,29 +23,10 @@ namespace me_and_dad
 	};
 
 	/**
-	 * @brief Animation / behavior state of an entity.
-	 *
-	 * The presence of @ref Punching, @ref IFrames or @ref FlashEffect
-	 * components also encodes transient state and may override this value
-	 * when picking the sprite.
-	 */
-	enum class EntityState {
-		Idle,
-		Walking,
-		Jumping,
-		Attacking,
-		Hit,
-		Thrown,
-		Exploding,
-		Dead
-	};
-
-	/**
 	 * @brief Identifies which AI behavior an enemy uses.
 	 */
 	enum class AiKind {
 		None,
-		ChasePlayer,
 		Patrol
 	};
 
@@ -112,24 +93,10 @@ namespace me_and_dad
 	};
 
 	/**
-	 * @brief Damage amount this entity inflicts on a successful hit.
-	 */
-	struct Damage {
-		int amount = 0;
-	};
-
-	/**
 	 * @brief Facing direction of an entity. Used by render flip and punch hitbox.
 	 */
 	struct Direction {
 		FacingDirection facing = FacingDirection::Right;
-	};
-
-	/**
-	 * @brief Current animation / behavior state. See @ref EntityState.
-	 */
-	struct State {
-		EntityState current = EntityState::Idle;
 	};
 
 	/**
@@ -292,16 +259,12 @@ namespace me_and_dad
 	/*  entity (see TaggedStorage in the bottom of this file).            */
 	/* ------------------------------------------------------------------ */
 
-	/** @brief Marker: this entity reads keyboard input. */
-	struct InputControlled {};
 	/** @brief Marker: this entity is the player. */
 	struct PlayerTag {};
 	/** @brief Marker: this entity is an enemy. */
 	struct EnemyTag {};
 	/** @brief Marker: this enemy can punch back (used to differentiate Level 2 enemies). */
 	struct SpecialEnemyTag {};
-	/** @brief Marker: this entity is a static, non-moving object. */
-	struct StaticObjectTag {};
 
 	/* ------------------------------------------------------------------ */
 	/*  Entity factory functions                                          */
@@ -332,20 +295,6 @@ namespace me_and_dad
 	 * @return The entity id.
 	 */
 	ent_type createSpecialEnemy(std::initializer_list<Vec2> patrolPoints, const char* name);
-
-	/**
-	 * @brief Create a static decoration entity (e.g. a tree, trash can).
-	 * @param position Initial world position.
-	 * @param spriteName Sprite key for the renderer.
-	 * @param colliderSize AABB collider size in pixels.
-	 * @param solid Whether the collider blocks movement.
-	 * @return The entity id.
-	 */
-	ent_type createStaticObject(
-		Vec2 position = {0, 0},
-		const char* spriteName = nullptr,
-		Vec2 colliderSize = {0, 0},
-		bool solid = true);
 
 	/**
 	 * @brief Create a short-lived "punch impact" flash entity.
@@ -424,15 +373,11 @@ namespace me_and_dad
 /*                     indexed by entity id. Best when most entities      */
 /*                     have the component (uses more memory).             */
 /*                                                                        */
-/*  Tag components (InputControlled, PlayerTag, EnemyTag, ...) use        */
+/*  Tag components (PlayerTag, EnemyTag, ...) use                         */
 /*  TaggedStorage because they hold zero data. Everything else here uses  */
 /*  PackedStorage because only player + enemies + a few effects have      */
 /*  them, so a full sparse array would waste memory.                      */
 /* ---------------------------------------------------------------------- */
-
-template <> struct bagel::Storage<me_and_dad::InputControlled> final : NoInstance {
-	using type = TaggedStorage<me_and_dad::InputControlled>;
-};
 
 template <> struct bagel::Storage<me_and_dad::PlayerTag> final : NoInstance {
 	using type = TaggedStorage<me_and_dad::PlayerTag>;
@@ -444,10 +389,6 @@ template <> struct bagel::Storage<me_and_dad::EnemyTag> final : NoInstance {
 
 template <> struct bagel::Storage<me_and_dad::SpecialEnemyTag> final : NoInstance {
 	using type = TaggedStorage<me_and_dad::SpecialEnemyTag>;
-};
-
-template <> struct bagel::Storage<me_and_dad::StaticObjectTag> final : NoInstance {
-	using type = TaggedStorage<me_and_dad::StaticObjectTag>;
 };
 
 template <> struct bagel::Storage<me_and_dad::Transform> final : NoInstance {
@@ -468,10 +409,6 @@ template <> struct bagel::Storage<me_and_dad::Collider> final : NoInstance {
 
 template <> struct bagel::Storage<me_and_dad::Direction> final : NoInstance {
 	using type = PackedStorage<me_and_dad::Direction>;
-};
-
-template <> struct bagel::Storage<me_and_dad::State> final : NoInstance {
-	using type = PackedStorage<me_and_dad::State>;
 };
 
 template <> struct bagel::Storage<me_and_dad::EnemyName> final : NoInstance {

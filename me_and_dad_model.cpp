@@ -84,22 +84,17 @@ namespace me_and_dad
 		// "kid" is the sprite key registered in the asset map; {42, 64} is the collider box size.
 		ent_type entity = createBaseEntity(position, "kid", {42, 64});
 
-		// Step 2: identity tags. PlayerTag lets systems filter "this is the player",
-		// and InputControlled tells the InputSystem to read keyboard for this entity.
+		// Step 2: identity tag. PlayerTag lets systems filter "this is the player".
 		bagel::World::addComponent<PlayerTag>(entity, {});
-		bagel::World::addComponent<InputControlled>(entity, {});
 
 		// Step 3: motion + combat stats.
 		// Velocity starts at zero; 6 is the max speed cap MovementSystem will enforce.
-		// Health starts full (5/5). Damage = 1 means each punch removes one HP from the target.
+		// Health starts full (5/5).
 		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 6});
 		bagel::World::addComponent<Health>(entity, {5, 5});
-		bagel::World::addComponent<Damage>(entity, {1});
 
-		// Step 4: facing + animation state. Player spawns facing right and idle;
-		// these are updated by InputSystem (facing) and CombatSystem (state).
+		// Step 4: facing. Player spawns facing right; updated by InputSystem.
 		bagel::World::addComponent<Direction>(entity, {FacingDirection::Right});
-		bagel::World::addComponent<State>(entity, {EntityState::Idle});
 
 		// Step 5: Intent is the "what does this entity want to do this frame" buffer.
 		// InputSystem writes into it from the keyboard; MovementSystem/CombatSystem read it.
@@ -133,15 +128,12 @@ namespace me_and_dad
 		// Step 3: mark this entity as an enemy so CombatSystem and AISystem pick it up.
 		bagel::World::addComponent<EnemyTag>(entity, {});
 
-		// Step 4: combat stats - slower than the player (maxSpeed = 1.5), only 2 HP, 1 damage per hit.
+		// Step 4: combat stats - slower than the player (maxSpeed = 1.5), only 2 HP.
 		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 1.5f});
 		bagel::World::addComponent<Health>(entity, {2, 2});
-		bagel::World::addComponent<Damage>(entity, {1});
 
-		// Step 5: visual / behavioral state. Enemies start facing left and idle;
-		// AISystem will switch them into Walking when patrolling.
+		// Step 5: facing. Enemies start facing left; AISystem updates it while patrolling.
 		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
-		bagel::World::addComponent<State>(entity, {EntityState::Idle});
 
 		// Step 6: HUD-facing name (shown on the enemy health bar) and the per-frame Intent buffer
 		// that AISystem fills in instead of the keyboard.
@@ -173,14 +165,12 @@ namespace me_and_dad
 		bagel::World::addComponent<EnemyTag>(entity, {});
 		bagel::World::addComponent<SpecialEnemyTag>(entity, {});
 
-		// Step 4: combat stats - faster than a normal enemy (maxSpeed = 2.0), same HP and damage.
+		// Step 4: combat stats - faster than a normal enemy (maxSpeed = 2.0), same HP.
 		bagel::World::addComponent<Velocity>(entity, {{0, 0}, 2.f});
 		bagel::World::addComponent<Health>(entity, {2, 2});
-		bagel::World::addComponent<Damage>(entity, {1});
 
-		// Step 5: identical facing/state/name/intent setup as the normal enemy.
+		// Step 5: identical facing/name/intent setup as the normal enemy.
 		bagel::World::addComponent<Direction>(entity, {FacingDirection::Left});
-		bagel::World::addComponent<State>(entity, {EntityState::Idle});
 		bagel::World::addComponent<EnemyName>(entity, {name});
 		bagel::World::addComponent<Intent>(entity, {});
 
@@ -188,24 +178,6 @@ namespace me_and_dad
 		// from the SpecialEnemyTag above, not from a different AI kind.
 		bagel::World::addComponent<AI>(entity, {AiKind::Patrol, 0});
 		bagel::World::addComponent<Path>(entity, path);
-
-		return entity;
-	}
-
-	ent_type createStaticObject(Vec2 position, const char* spriteName, Vec2 colliderSize, bool solid)
-	{
-		// Step 1: build the base entity with the caller-supplied sprite + collider size.
-		// Static objects only need Transform / Renderable / Collider - no Velocity, no AI.
-		ent_type entity = createBaseEntity(position, spriteName, colliderSize);
-
-		// Step 2: mark this entity as static. PhysicsSystem uses this tag to create
-		// a Box2D static body (zero mass, never moves) instead of a dynamic body.
-		bagel::World::addComponent<StaticObjectTag>(entity, {});
-
-		// Step 3: override the Collider's "solid" flag in-place. createBaseEntity
-		// always sets solid = true, but some decorations (e.g. visual-only props)
-		// should pass through, so we patch the stored Collider directly here.
-		bagel::Storage<Collider>::type::get(entity).solid = solid;
 
 		return entity;
 	}
