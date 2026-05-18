@@ -1,13 +1,17 @@
 // Copyright (C) 2026 Moshe Sulamy
 
+///
+///
+
 #pragma once
-#include <algorithm>
-#include <bit>
-#include <cstdlib>
+#include <algorithm>   // std::max
+#include <bit>         // std::countr_zero
+#include <cstdlib>     // malloc, free, realloc
 #include <cstdint>
 #include <type_traits>
 
 // Cross-compiler attribute to keep static auto-registration variables alive.
+// __attribute__((used)) is GCC/Clang only; MSVC has no portable equivalent.
 #if defined(__GNUC__) || defined(__clang__)
 #  define BAGEL_USED __attribute__((used))
 #else
@@ -17,8 +21,12 @@
 namespace bagel
 {
 	/**** Parameters ****/
-	constexpr int	MaxComponents = 32;
+	constexpr int	MaxComponents = 32;     // local: project has 19+ component types
 	constexpr bool	DynamicBags = true;
+	constexpr int	IdBagSize = 10;
+	constexpr int	InitialEntities = 100;
+	constexpr int	InitialPackedSize = 50;
+	constexpr bool	CallbackOnDelete = true; // local: required for PackedStorage cleanup on Entity::destroy()
 	/** end parameters **/
 
 	using id_type = int;
@@ -95,7 +103,7 @@ namespace bagel
 	template <class T> struct Register;
 
 	template <class T>
-	class SparseStorage final : NoInstance
+	class SparseStorage final : public NoInstance
 	{
 	public:
 		static void add(ent_type ent, const T& val) {
@@ -107,11 +115,11 @@ namespace bagel
 			return _comps[ent.id];
 		}
 	private:
-		static inline Bag<T,100> _comps;
+		static inline Bag<T,InitialEntities> _comps;
 		BAGEL_USED static inline Register<T> _reg{nullptr};
 	};
 	template <class T>
-	class TaggedStorage final : NoInstance
+	class TaggedStorage final : public NoInstance
 	{
 	public:
 		static void add(ent_type, const T&) {}
@@ -121,7 +129,7 @@ namespace bagel
 		BAGEL_USED static inline Register<T> _reg{nullptr};
 	};
 	template <class T>
-	class PackedStorage final : NoInstance
+	class PackedStorage final : public NoInstance
 	{
 	public:
 		static void add(const ent_type ent, const T& val) {
@@ -131,30 +139,24 @@ namespace bagel
 			_compToId.push(ent.id);
 		}
 		static void del(const ent_type ent) {
-			const int idx = _idToComp[ent.id];
-			const int lastIdx = _comps.size() - 1;
+			int idx = _idToComp[ent.id];
+			const id_type last = _compToId.pop();
 
-			if (idx != lastIdx) {
-				const id_type lastId = _compToId[lastIdx];
-				_comps[idx] = _comps[lastIdx];
-				_compToId[idx] = lastId;
-				_idToComp[lastId] = idx;
-			}
-
-			_comps.pop();
-			_compToId.pop();
+			_comps[idx] = _comps.pop();
+			_compToId[idx] = last;
+			_idToComp[last] = idx;
 		}
 		static T& get(const ent_type ent) {
 			return _comps[_idToComp[ent.id]];
 		}
 	private:
-		static inline Bag<T,100> _comps;
-		static inline Bag<int,100> _idToComp;
-		static inline Bag<id_type,100> _compToId;
+		static inline Bag<T,InitialPackedSize> _comps;
+		static inline Bag<int,InitialEntities> _idToComp;
+		static inline Bag<id_type,InitialPackedSize> _compToId;
 		BAGEL_USED static inline Register<T> _reg{del};
 	};
 	template <class T>
-	class StackStorage final : NoInstance
+	class StackStorage final : public NoInstance
 	{
 	public:
 		static void add(const ent_type ent, const T& val) {
@@ -178,9 +180,9 @@ namespace bagel
 			return _comps[_idToComp[ent.id]];
 		}
 	private:
-		static inline Bag<T,100> _comps;
-		static inline Bag<int,100> _idToComp;
-		static inline Bag<id_type,100> _freeIdx;
+		static inline Bag<T,InitialPackedSize> _comps;
+		static inline Bag<int,InitialEntities> _idToComp;
+		static inline Bag<id_type,IdBagSize> _freeIdx;
 		BAGEL_USED static inline Register<T> _reg{del};
 	};
 
@@ -208,7 +210,7 @@ namespace bagel
 		mask_type	_mask{0};
 	};
 
-	inline int compCounter = -1;
+	inline int compCounter = -1;  // local: external linkage so all TUs share one counter
 	template <class>
 	struct Component final : NoInstance
 	{
@@ -216,22 +218,37 @@ namespace bagel
 		static inline const Mask::bit_type	Bit = Mask::bit(Index);
 	};
 
-	class World final : NoInstance
+	/// Main class of ECS world
+	/// @brief ECS world
+	class World final : public NoInstance
 	{
+		static inline Bag<Mask,InitialEntities>		_masks;
+		static inline Bag<id_type,IdBagSize>		_ids;
+		static inline id_type _maxId = -1;
+		static auto& _deleters() {
+			static Bag<DeleteFunc,MaxComponents> _deleters;
+			return _deleters;
+		}
 	public:
+		/// Creates a new entity in the ECS world
+		/// @return The new entity
 		static ent_type createEntity() {
 			if (_ids.size() > 0)
 				return {_ids.pop()};
 			_masks.push(Mask{});
 			return {++_maxId};
 		}
+		/// Deletes the given entity from the ECS world
+		/// @param ent The entity to delete
 		static void deleteEntity(ent_type ent) {
-			Mask m = _masks[ent.id];
-			int ctz;
-			while ((ctz = m.ctz()) >= 0) {
-				if (ctz < _deleters.size() && _deleters[ctz] != nullptr)
-					_deleters[ctz](ent);
-				m.clear(Mask::bit(ctz));
+			if constexpr (CallbackOnDelete) {
+				Mask m = _masks[ent.id];
+				int ctz;
+				while ((ctz = m.ctz()) >= 0) {
+					if (_deleters()[ctz] != nullptr)
+						_deleters()[ctz](ent);
+					m.clear(Mask::bit(ctz));
+				}
 			}
 			_masks[ent.id].clear();
 			_ids.push(ent.id);
@@ -246,6 +263,8 @@ namespace bagel
 		}
 		template <class T>
 		static void addComponent(ent_type ent, const T& comp) {
+			// local: explicit registration because BAGEL_USED is a no-op on MSVC,
+			// so we can't rely on Register<T> _reg{del} static-init firing reliably.
 			registerDeleter<T>(Storage<T>::type::del);
 			_masks[ent.id].set(Component<T>::Bit);
 			Storage<T>::type::add(ent,comp);
@@ -255,20 +274,14 @@ namespace bagel
 			_masks[ent.id].clear(Component<T>::Bit);
 			Storage<T>::type::del(ent);
 		}
-
 		template <class T>
 		static void registerDeleter(DeleteFunc func) {
-			while (_deleters.size() < Component<T>::Index+1)
-				_deleters.push(nullptr);
-			_deleters[Component<T>::Index] = func;
+			while (_deleters().size() < Component<T>::Index+1)
+				_deleters().push(nullptr);
+			_deleters()[Component<T>::Index] = func;
 		}
 
 		static id_type maxId() { return _maxId; }
-	private:
-		static inline Bag<Mask,100>		_masks;
-		static inline Bag<id_type,100>	_ids;
-		static inline Bag<DeleteFunc,10> _deleters;
-		static inline id_type _maxId = -1;
 	};
 
 	template <class T> struct Register

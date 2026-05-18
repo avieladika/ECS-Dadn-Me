@@ -1,51 +1,57 @@
-# Fixes Applied to `bagel.h`
+# Local divergences from upstream `bagel.h`
 
-This document lists every modification made to the course-provided `bagel.h` so
-that the engine compiles and runs correctly on **MSVC (Windows)** and across
-**multiple translation units**. None of these are design changes — they're
-portability and correctness fixes.
+This document lists every line in our `bagel.h` that differs from upstream
+([`bagel26@db3403f`](https://github.com/...) — 2026-05-16, "12/5 Lecture 7"),
+and explains why.
 
-The original `bagel.h` was written assuming a single `.cpp` file using GCC/Clang
-(as in the Pong example). Once the project grew to multiple `.cpp` files
-compiled by MSVC, several latent issues surfaced.
+The base of our file is the upstream verbatim. On top of that we apply five
+small portability/correctness patches required to:
+- compile under **MSVC** (the course author tests on GCC/Clang),
+- work across **multiple translation units** (our project is split into
+  `Game.cpp` and `me_and_dad_model.cpp`; the Pong example is a single `.cpp`),
+- keep **`PackedStorage` cleanup** wired up under upstream's new
+  `CallbackOnDelete` design.
+
+> **Historical note.** Earlier versions of this document listed two additional
+> fixes that have since been adopted upstream: `__builtin_ctz` → `std::countr_zero`
+> in `Mask::ctz()`, and the single-argument `delComponent` signature. Both are
+> now present in upstream and require no local patch.
 
 ---
 
 ## Fix 1 — Missing standard headers
 
-**Symptom:** Compile errors:
+**Symptom (MSVC):**
 - `error C2039: 'max': is not a member of 'std'`
 - `error C3861: 'malloc': identifier not found`
-- `'std::countr_zero' not found` (after Fix 3)
+- `'std::countr_zero': identifier not found`
 
-**Cause:** The original file commented out `<cstdlib>` and didn't include
-`<algorithm>` or `<bit>`. GCC/Clang's standard library often pulls these in
-transitively; MSVC does not.
+**Cause:** Upstream's `bagel.h` only includes `<cstdint>` and `<type_traits>`
+(and leaves `<cstdlib>` commented out). GCC/Clang's standard library pulls the
+rest in transitively; MSVC's stricter STL does not.
 
-**Change:** Added explicit includes at the top of the file.
+**Change:** Three explicit includes near the top of the file.
 
 ```cpp
-#include <algorithm>   // std::max
-#include <bit>         // std::countr_zero
-#include <cstdlib>     // malloc, free, realloc
-#include <cstdint>
-#include <type_traits>
+#include <algorithm>   // std::max          (used by DynamicBag::ensure)
+#include <bit>         // std::countr_zero  (used by Mask::ctz)
+#include <cstdlib>     // malloc/free/realloc (used by DynamicBag)
 ```
 
 ---
 
-## Fix 2 — `__attribute__((used))` is GCC/Clang only
+## Fix 2 — `__attribute__((used))` is GCC/Clang-only
 
-**Symptom:** MSVC parse errors at every line that used the attribute:
+**Symptom (MSVC):** parse cascade at every storage class:
 - `error C2059: syntax error: '('`
 - `error C4430: missing type specifier - int assumed`
 
-**Cause:** `__attribute__((used))` is a GCC/Clang extension. MSVC doesn't
-recognize it and tries to interpret the token sequence as a function
-declaration, which fails.
+**Cause:** `__attribute__((used))` is a GCC/Clang extension. MSVC treats the
+token sequence as a malformed declarator.
 
-**Change:** Wrapped the attribute in a cross-compiler `BAGEL_USED` macro that
-expands to nothing on MSVC.
+**Change:** A portable `BAGEL_USED` macro, used in place of the raw attribute
+at the four `Register<T> _reg{...}` sites (`SparseStorage`, `TaggedStorage`,
+`PackedStorage`, `StackStorage`).
 
 ```cpp
 #if defined(__GNUC__) || defined(__clang__)
@@ -55,135 +61,139 @@ expands to nothing on MSVC.
 #endif
 ```
 
-All four uses (`SparseStorage`, `TaggedStorage`, `PackedStorage`,
-`StackStorage`) updated to use `BAGEL_USED` instead.
+> **Caveat:** On MSVC `BAGEL_USED` is empty — there is no portable equivalent
+> of `__attribute__((used))`. That means we cannot guarantee the
+> `Register<T> _reg{del}` static initializer fires on MSVC. See Fix 5 for the
+> belt-and-suspenders workaround.
 
 ---
 
-## Fix 3 — `__builtin_ctz` is GCC/Clang only
+## Fix 3 — `MaxComponents = 32`
 
-**Symptom:** `error C3861: '__builtin_ctz': identifier not found`
+**Symptom:** Random crashes with access violations after about the 8th
+component type was introduced. Components past index 7 had their bits
+truncated to zero (because `1 << 8` doesn't fit in `uint_fast8_t`), causing
+mask collisions and reads from unmapped storage slots.
 
-**Cause:** `__builtin_ctz` (count trailing zeros) is a GCC/Clang intrinsic.
-MSVC has `_BitScanForward` but it's an entirely different API.
+**Cause:** Upstream's default `MaxComponents = 6` matches the Pong example
+(6 component types). Our project defines about 19 (Transform, Renderable,
+Collider, PlayerTag, InputControlled, Velocity, Health, Damage, Direction,
+State, Intent, Keys, EnemyTag, SpecialEnemyTag, AI, FlashEffect, Punching,
+IFrames, StaticObjectTag, Lifetime, EnemyName, …).
 
-**Change:** Replaced with the C++20 standard library equivalent, which works
-on every compiler.
+**Change:** Bump the parameter to 32. The existing `conditional_t` ladder
+automatically promotes `mask_type` to `uint_fast32_t`.
 
 ```cpp
-// Before
-int ctz() const { return _mask ? __builtin_ctz(_mask) : -1; }
-
-// After
-int ctz() const { return _mask ? std::countr_zero(_mask) : -1; }
+constexpr int MaxComponents = 32;   // was 6
 ```
 
 ---
 
-## Fix 4 — `World::delComponent` signature mismatch
+## Fix 4 — `compCounter` needs external linkage
 
-**Symptom:** Calling `Entity::del<T>()` would not compile (the body
-`World::delComponent<T>(_ent)` passes 1 argument, but the function required 2).
-
-**Cause:** The original signature was inconsistent with how it was being
-called and with the `Storage::del(ent)` method it forwards to:
-
-```cpp
-// Before — required two arguments but Entity::del<T>() and
-//          PackedStorage::del() both work with just one
-template <class T>
-static void delComponent(ent_type ent, const T& comp) {
-    _masks[ent.id].clear(Component<T>::Bit);
-    Storage<T>::type::del(ent, comp);
-}
-```
-
-**Change:** Removed the unused second parameter so that the signature matches
-`Entity::del<T>()` and `Storage<T>::type::del(ent_type)`.
-
-```cpp
-template <class T>
-static void delComponent(ent_type ent) {
-    _masks[ent.id].clear(Component<T>::Bit);
-    Storage<T>::type::del(ent);
-}
-```
-
-This is required by `LifetimeSystem` to remove transient components such as
-`Punching` and `IFrames` when their timer expires.
-
----
-
-## Fix 5 — `MaxComponents = 6` is too small for this project
-
-**Symptom:** Game crashed at runtime with access violations. Components past
-index 7 had their bits truncated to 0 (because `1 << 8` doesn't fit in
-`uint_fast8_t`), causing mask collisions and reads from unmapped storage
-slots.
-
-**Cause:** The original value of `6` matches the Pong example, which only
-defines six component types. "Me and Dad" uses about 19 component types
-(Transform, Renderable, Collider, PlayerTag, InputControlled, Velocity,
-Health, Damage, Direction, State, Intent, Keys, EnemyTag, SpecialEnemyTag,
-AI, FlashEffect, Punching, IFrames, StaticObjectTag).
-
-**Change:** Increased the parameter to 32. This selects `uint_fast32_t` as
-the mask type, giving 32 distinct component bits.
-
-```cpp
-// Before
-constexpr int MaxComponents = 6;
-
-// After
-constexpr int MaxComponents = 32;
-```
-
-The `mask_type` deduction in `bagel.h` already supports values up to 64,
-so this is a parameter tweak, not a structural change.
-
----
-
-## Fix 6 — `compCounter` had internal (per-TU) linkage
-
-**Symptom:** With the game spread across two source files (`Game.cpp` and
-`me_and_dad_model.cpp`), different `Component<T>::Index` values collided.
-For example, both `Component<Transform>` and `Component<Punching>` could end
-up with index `0` and bit `1`, so the player's mask incorrectly tested
-positive for `Punching` and crashed in `LifetimeSystem` when accessing
-non-existent component data.
+**Symptom:** With the game spread across two source files, different
+`Component<T>::Index` values collided across translation units. For example,
+both `Component<Transform>` and `Component<Punching>` could end up with
+index 0 in their respective TUs. The player's mask would then test positive
+for `Punching`, and `LifetimeSystem` would crash reading non-existent
+`Punching` data.
 
 **Cause:** `static inline int compCounter = -1;` at namespace scope has
-**internal linkage** — each translation unit gets its own copy starting at
-`-1`. `inline` alone (without `static`) would give external linkage (one
-shared copy across the program).
+**internal linkage** — each TU gets its own private copy starting at -1.
+The `inline` keyword alone gives **external linkage** (one shared copy
+across the whole program), which is what we need.
 
 The Pong example never hit this because it uses bagel from a single `.cpp`
-file, so only one counter existed.
+file.
 
-**Change:** Removed `static` to give the variable external linkage.
+**Change:** Drop the `static`.
 
 ```cpp
-// Before — one counter per .cpp file
-static inline int compCounter = -1;
-
-// After — one counter shared across the whole program
-inline int compCounter = -1;
+inline int compCounter = -1;        // was: static inline int compCounter = -1;
 ```
 
-This guarantees every distinct `Component<T>` gets a globally unique index.
+---
+
+## Fix 5 — `CallbackOnDelete = true` *(new in this revision)*
+
+**Symptom:** Without this flag, every call to `Entity::destroy()` would skip
+`PackedStorage::del`, leaking the dense-array slot. The `_comps`, `_compToId`,
+and `_idToComp` bags would grow forever, and after enough enemy spawns/kills
+the storage would overflow or corrupt.
+
+**Cause:** Upstream's revised `World::deleteEntity` gates the
+component-deleter loop behind `if constexpr (CallbackOnDelete)`, and the
+default upstream value is `false`. That's fine for the Pong example (which
+uses `SparseStorage` only — `SparseStorage::del` is a no-op). It's not fine
+for our project: `me_and_dad_model.h:398-448` specializes 12 components to
+`PackedStorage` (Transform, Velocity, Renderable, Collider, Direction, State,
+EnemyName, Intent, Keys, Punching, IFrames, FlashEffect, Lifetime), and
+`PackedStorage::del` is the function that performs the swap-and-pop cleanup.
+
+`Entity::destroy()` is called in three places in our game:
+
+| Call site | When it fires |
+|---|---|
+| `Game.cpp:266` | Bulk cleanup of all entities matching a given mask |
+| `Game.cpp:612` | A `FlashEffect` timer reaches zero |
+| `Game.cpp:647` | An entity is flagged dead and removed |
+
+**Change:** Flip the parameter to `true`.
+
+```cpp
+constexpr bool CallbackOnDelete = true;   // was false
+```
+
+**Companion change (in `World::addComponent`):** Upstream further simplified
+`addComponent` to assume the `BAGEL_USED Register<T> _reg{del}` static
+initializer is what registers the deleter. As noted under Fix 2, that
+initializer is unreliable on MSVC. We keep the *explicit* call to
+`registerDeleter<T>(Storage<T>::type::del)` at the top of `addComponent`,
+which guarantees the deleter ends up in the table the first time we
+`add<T>` any component of that type — regardless of compiler.
+
+```cpp
+template <class T>
+static void addComponent(ent_type ent, const T& comp) {
+    registerDeleter<T>(Storage<T>::type::del);    // local: MSVC safety net
+    _masks[ent.id].set(Component<T>::Bit);
+    Storage<T>::type::add(ent, comp);
+}
+```
 
 ---
 
 ## Summary
 
-| # | Fix | File location |
-|---|---|---|
-| 1 | Added `<algorithm>`, `<bit>`, `<cstdlib>` includes | Top of file |
-| 2 | `__attribute__((used))` → `BAGEL_USED` macro | 4 storage classes |
-| 3 | `__builtin_ctz` → `std::countr_zero` | `Mask::ctz()` |
-| 4 | `delComponent` takes one argument, not two | `World::delComponent` |
-| 5 | `MaxComponents = 6` → `32` | Parameters block |
-| 6 | `static inline int compCounter` → `inline int compCounter` | Namespace scope |
+| # | Fix | File location | Reason |
+|---|---|---|---|
+| 1 | Add `<algorithm>`, `<bit>`, `<cstdlib>` | Top of file | MSVC stricter STL |
+| 2 | `__attribute__((used))` → `BAGEL_USED` | 4 storage classes | MSVC parse |
+| 3 | `MaxComponents = 32` (was 6) | Parameters block | 19+ component types |
+| 4 | `inline int compCounter` (drop `static`) | Namespace scope | Cross-TU linkage |
+| 5 | `CallbackOnDelete = true` (was false) | Parameters block | PackedStorage cleanup |
+|   | + explicit `registerDeleter` in `addComponent` | `World` body | MSVC safety net |
 
-None of these changes modify the engine's behavior or API beyond what's
-required to compile under MSVC and to work across multiple translation units.
+None of these change the engine's API or behavior beyond what's strictly
+required for our compiler and our project structure. The shape of the
+public interface (`Entity::create/destroy/get/add/del/has/test`,
+`MaskBuilder`, `Storage<T>` specialization, `ent_type`) is identical to
+upstream.
+
+## Upstream improvements adopted in this sync
+
+For reference, the merge also pulled in these upstream improvements (no
+local changes required — listed for context):
+
+- New sizing constants `IdBagSize`, `InitialEntities`, `InitialPackedSize`
+  replacing hardcoded `10` / `100` / `50` literals.
+- `World::_deleters` moved into a function-local static for safer C++
+  static-initialization order.
+- `World::deleteEntity` loop gated behind `if constexpr (CallbackOnDelete)`
+  (with `CallbackOnDelete = true` it compiles in for us).
+- `PackedStorage::del` simplified — drops the `if (idx != lastIdx)` guard
+  in favour of an unconditional swap-with-last.
+- Doxygen comments on `World`, `createEntity`, `deleteEntity`.
+- `public NoInstance` inheritance and `World` field-before-method layout
+  (cosmetic).
