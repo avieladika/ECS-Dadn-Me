@@ -1,0 +1,2 @@
+# Exclude bundled dependencies from the project language breakdown.
+lib/** linguist-vendored
