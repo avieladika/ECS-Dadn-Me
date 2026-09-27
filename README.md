@@ -1,14 +1,51 @@
-# Dad 'n Me — ECS Game Project
+# Dad ’n Me — ECS Game
 
-An academic C++ game project using an Entity Component System, SDL3 rendering, and Box2D physics integration.
+![C++20](https://img.shields.io/badge/C%2B%2B20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
+![SDL3](https://img.shields.io/badge/SDL3-19486A?style=for-the-badge)
+![Box2D](https://img.shields.io/badge/Box2D-6B8E23?style=for-the-badge)
+![CMake](https://img.shields.io/badge/CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white)
 
-## Highlights
+**Links:** [Repository](https://github.com/avieladika/ECS-Dadn-Me) · [Game model](me_and_dad_model.h) · [Framework adaptations](BAGEL_CHANGES.md)
 
-- Components for transforms, movement, rendering, health, collision, and combat state.
-- Systems and entity factories separated from the application loop.
-- SDL3 and SDL3_image for the graphical application.
-- Box2D integration for physics bodies.
-- Documented adaptations of the course-provided Bagel ECS framework.
+Dad ’n Me is a collaborative academic game project built with C++20, a course-provided Entity Component System framework, SDL3 rendering, and Box2D physics integration.
+
+## The Challenge
+
+Game entities combine movement, rendering, collision, health, and temporary combat state. Managing these behaviors together creates a challenge around shared logic and entity lifecycles.
+
+## The Solution
+
+The project represents gameplay state as components and processes behavior through systems and entity factories. The application loop connects that model to graphics, input, and physics.
+
+## What It Includes
+
+- Components for transforms, velocity, rendering, collision, health, and combat state.
+- Entity factories and gameplay systems.
+- SDL3 and SDL3_image rendering integration.
+- Box2D physics bodies.
+- CMake build configuration with resource copying.
+- Documented local adaptations to the Bagel ECS framework.
+
+## System Model
+
+`Game.*` coordinates the application, while `me_and_dad_model.*` defines components, factories, and systems. Bagel provides ECS storage and entity operations. SDL and Box2D provide rendering and physics capabilities.
+
+## Core Technical Flow
+
+Input → component/state updates → gameplay and physics processing → rendering → transient-state and entity cleanup.
+
+```mermaid
+flowchart LR
+    I[Input] --> G[Game loop]
+    G --> S[Gameplay systems]
+    S <--> C[Entity components]
+    S <--> P[Box2D physics]
+    G --> R[SDL rendering]
+```
+
+## Why This Design
+
+Composition lets entities combine the state they need. The project also exposes practical C++ integration issues, including component registration across translation units and cleanup when entities are destroyed.
 
 ## Build
 
@@ -20,16 +57,6 @@ cmake --build build --config Release
 ```
 
 Run the resulting `ECS_Dadn_Me` executable from its output directory. CMake copies `res/` next to the executable; keep those assets alongside it. Executable locations vary by generator, for example `build/` or `build/Release/`.
-
-## Architecture
-
-- `Game.cpp` / `Game.h`: application loop and gameplay integration.
-- `me_and_dad_model.*`: components, systems, and entity factories.
-- `bagel.h`: course-provided ECS framework with local adaptations.
-- `res/`: game assets.
-- `lib/`: bundled third-party libraries.
-
-See [BAGEL_CHANGES.md](BAGEL_CHANGES.md) for the portability, component registration, and cleanup changes.
 
 ## Credits and scope
 
